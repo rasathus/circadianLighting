@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>{% block title %}Welcome{% endblock %} | raspberry.rasathus.com</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    
+    <style type="text/css" media="screen">
+        body {
+            background: #333;
+            color: #999;
+            font: 300 100.01%/1.2 "Segoe UI", "Helvetica Neue", Helvetica, "Arial Unicode", Arial, sans-serif;
+            margin: 0 30px;
+        }
+        #content {
+            width: 100%;
+            height: 100%;
+            /*width: 640px;
+            height: 480px; */
+            position: relative;
+        }
+        h1 {
+            font-weight: 300;
+            font-size: 3em;
+            position: absolute;
+            right: 10px;
+            bottom: 50px;
+        }
+        p {
+            font-size: 2em;
+        }
+        #benefits {
+            margin-top: 350px;
+        }
+        #copy a {
+            color: #666;
+            text-decoration: none;
+        }
+        #picker2 {
+            width: 400px;
+            position: absolute;
+            top: 250px;
+            left: 50%;
+            margin-left: -150px;
+        }
+        #benefits {
+            margin-bottom: 0;
+        }
+        #output {
+            background: #eee;
+            position: absolute;
+            font-size: 30px;
+            bottom: 10px;
+            left: 10px;
+            font-family: monospace;
+            margin-top: -20px;
+        }
+        #copy {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            margin: 0;
+            font-size: .6em;
+            color: #666;
+        }
+    </style>
+    <script src="/static/js/raphael.js" type="text/javascript" charset="utf-8"></script>
+    <script src="/static/js/colorpicker.js" type="text/javascript" charset="utf-8"></script>
+    <script src="/static/js/colorwheel.js" type="text/javascript" charset="utf-8"></script>
+    
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+    <script type="text/javascript">
+        $(document).ready(function(){
+            {% block doc_ready %}
+            {% endblock %}     
+        });
+    </script>
+    <script type="text/javascript">
+        window.onload = function () {
+            var out = document.getElementById("output"),
+                reg = /^#(.)\1(.)\2(.)\3$/;
+            
+            // this is where colorpicker created
+            var cp = Raphael.colorpicker(40, 20, 400, "#eee");
+            var cp2 = Raphael.colorwheel(460, 20, 400, "#eee");
+            
+            out.onkeyup = function () {
+                cp.color(this.value);
+                cp2.color(this.value);
+            };
+            // assigning onchange event handler
+            cp.onchange = function (clr) {
+                console.debug("Before replace : "+clr);
+                out.value = clr.replace(reg, "#$1$2$3");
+                cp2.color(clr);
+                out.style.background = clr;
+                out.style.color = Raphael.rgb2hsb(clr).b < .5 ? "#fff" : "#000";
+                console.debug("Clr : "+Raphael.color(clr));
+                jQuery.get("/set/"+clr.replace('#',''));
+            };
+            cp2.onchange = function (clr) {
+                out.value = clr.replace(reg, "#$1$2$3");
+                cp.color(clr);
+                out.style.background = clr;
+                out.style.color = Raphael.rgb2hsb(clr).b < .5 ? "#fff" : "#000";
+                console.debug("Clr : "+Raphael.color(clr));
+                jQuery.get("/set/"+clr.replace('#',''));
+            };
+            // thats it. Too easy
+        };
+        </script>
+  </head>
+
+  <body>
+    <div class="container">
+        <div class=page>
+          {% with flashes = get_flashed_messages(with_categories=True) %}
+            {% if flashes %}
+              <ul class=flashes>
+              {% for category, message in flashes %}
+                {% if category == "success" %}
+                    <div class="alert alert-success">{{ message }}</div>
+                {% elif category == "error" %}
+                    <div class="alert alert-error">{{ message }}</div>
+                {% elif category == "warning" %}
+                    <div class="alert alert-block">{{ message }}</div>
+                {% else %}
+                    <div class="alert alert-info">{{ message }}</div>
+                {% endif %}
+              {% endfor %}
+              </ul>
+            {% endif %}
+          {% endwith %}
+          <div class=body>
+          {% block body %}{% endblock %}
+          </div>
+          </br>
+        </div>
+    </div> <!-- /container -->
+
+    <!-- Le javascript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <!-- <script src="/static/js/bootstrap-transition.js"></script> -->
+  </body>
+</html>
+
