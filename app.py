@@ -125,7 +125,6 @@ class Chain_Communicator:
             if self.state != 'autonomous':
                 # assume I need to do something for thread safety here ...
                 if not self.manual_queue.empty():
-                    # were only ever interested in the most recent manual update, the rest can be discarded.
                     manual_setting = self.manual_queue.get()
                     self.led_chain.set_rgb(manual_setting)
                     self.led_chain.write()
