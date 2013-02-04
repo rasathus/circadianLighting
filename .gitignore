@@ -49,4 +49,5 @@ Desktop.ini
 # Recycle Bin used on file shares
 $RECYCLE.BIN/
 
-*.log
+*.log*
+nohup.out
