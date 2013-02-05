@@ -37,9 +37,9 @@ time_format = "%H:%M:%S"
 # Event states should be in the form of [Red,Green,Blue]
 # Event names should be unique, as they are used for last run information
 auto_state_events = [{'event_name' :  'Night Phase', 'event_start_time' : '00:00:00', 'event_end_time' : '07:00:00' , 'event_state' : [0,0,0], 'transition_duration': 1000},
-                    {'event_name' :  'Sunrise Phase', 'event_start_time' : '07:30:00', 'event_end_time' : '08:00:00' , 'event_state' : [255,188,0], 'transition_duration': 5000},
+                    {'event_name' :  'Sunrise Phase', 'event_start_time' : '07:30:00', 'event_end_time' : '08:00:00' , 'event_state' : [255,109,0], 'transition_duration': 5000},
                     {'event_name' :  'Alert Phase', 'event_start_time' : '08:00:00', 'event_end_time' : '21:00:00' , 'event_state' : [0,78,103], 'transition_duration': 5000},
-                    {'event_name' :  'Relaxation Phase', 'event_start_time' : '22:00:00', 'event_end_time' : '23:59:00' , 'event_state' : [255,0,0], 'transition_duration': 3000},]
+                    {'event_name' :  'Relaxation Phase', 'event_start_time' : '22:00:00', 'event_end_time' : '23:59:00' , 'event_state' : [255,27,14], 'transition_duration': 3000},]
 
 # need to work on further transition modes.
 valid_transition_modes = ['fade']
