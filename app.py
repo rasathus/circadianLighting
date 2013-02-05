@@ -176,11 +176,11 @@ def send_command(hex_val):
         if job.name == 'autoresume':
             app.logger.debug("Removing existing autoresume job, and adding a new one.")
             sched.unschedule_job(led_chain.auto_resume_job)
-            led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(seconds=auto_resume_offset), name='autoresume', misfire_grace_time=240)
+            led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
             break
     else:
         app.logger.debug("No existing autoresume jobs, adding one.")
-        led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(seconds=auto_resume_offset), name='autoresume', misfire_grace_time=240)
+        led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
         
     app.logger.debug("Job list now contains : %s" % sched.print_jobs())
     led_chain.state = 'manual'
