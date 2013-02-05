@@ -32,12 +32,17 @@ persistent_store_path = '/home/pi/.lighting.db'
 config = {'apscheduler.jobstores.file.class': 'apscheduler.jobstores.shelve_store:ShelveJobStore',
           'apscheduler.jobstores.file.path': persistent_store_path}
 
-
-auto_state_events = [{'event_name' :  'Night Phase', 'event_start_time' : '00:00:00', 'event_end_time' : '07:00:00' , 'event_state' : [0,0,0], 'transition_duration': 500},
+time_format = "%H:%M:%S"
+# Event times should be in the form of %H:%M:%S
+# Event states should be in the form of [Red,Green,Blue]
+# Event names should be unique, as they are used for last run information
+auto_state_events = [{'event_name' :  'Night Phase', 'event_start_time' : '00:00:00', 'event_end_time' : '07:00:00' , 'event_state' : [0,0,0], 'transition_duration': 1000},
                     {'event_name' :  'Sunrise Phase', 'event_start_time' : '07:30:00', 'event_end_time' : '08:00:00' , 'event_state' : [255,188,0], 'transition_duration': 5000},
-                    {'event_name' :  'Alert Phase', 'event_start_time' : '08:00:00', 'event_end_time' : '21:00:00' , 'event_state' : [0,78,103], 'transition_duration': 500},
-                    {'event_name' :  'Relaxation Phase', 'event_start_time' : '22:00:00', 'event_end_time' : '23:59:00' , 'event_state' : [255,0,0], 'transition_duration': 500},]
+                    {'event_name' :  'Alert Phase', 'event_start_time' : '08:00:00', 'event_end_time' : '21:00:00' , 'event_state' : [0,78,103], 'transition_duration': 5000},
+                    {'event_name' :  'Relaxation Phase', 'event_start_time' : '22:00:00', 'event_end_time' : '23:59:00' , 'event_state' : [255,0,0], 'transition_duration': 3000},]
 
+# need to work on further transition modes.
+valid_transition_modes = ['fade']
 
 # Stolen from http://stackoverflow.com/questions/4296249/how-do-i-convert-a-hex-triplet-to-an-rgb-tuple-and-back
 HEX = '0123456789abcdef'
@@ -67,6 +72,8 @@ class Chain_Communicator:
         app.logger.debug("Chain_Communicator starting main_loop.")
         self.loop_instance = Thread(target=self.main_loop)
         self.loop_instance.start()
+        app.logger.info("Running resume auto, in case were in an auto event.")
+        self.resume_auto()
         app.logger.debug("Chain_Communicator init complete.")
 
     def main_loop(self):
@@ -89,15 +96,13 @@ class Chain_Communicator:
     def transition(self, state, transition_duration=500, transition_mode='fade'):
         # States must be in the format of a list containing Red, Green and Blue element values in order.
         # example. White = [255,255,255] Red = [255,0,0] Blue = [0,0,255] etc.
-        # a duration is represented in an incredibly imprescise unit, as ticks.
-
-
-        # !! Add in validation for transition modes !!
-
+        # a duration is represented in an incredibly imprescise unit, known as ticks.  Ticks are executed as fast as the the queue can be processed.
+        if transition_mode not in valid_transition_modes:
+            raise Exception("Invalid transition mode : %s , valid modes are : %s" % (transition_mode, valid_transition_modes))
 
         with self.queue.mutex:
             self.queue.queue.clear()
-        app.logger.debug("Current state is : %s , destination state is : %s , transitioning via %s in : %d ticks" % (self.led_state, state, transition_mode, transition_duration))
+        app.logger.info("Current state is : %s , destination state is : %s , transitioning via %s in : %d ticks" % (self.led_state, state, transition_mode, transition_duration))
 
         if transition_mode is 'fade':        
             # Using a modified version of http://stackoverflow.com/questions/6455372/smooth-transition-between-two-states-dynamically-generated for smooth transitions between states.
@@ -114,7 +119,15 @@ class Chain_Communicator:
         # returns system state to autonomous, to be triggered via the scheduler, or via a request hook from the web ui.
         self.state = 'autonomous'
         app.logger.debug("Resume auto called, system state is now : %s" % self.state)
-        app.logger.debug("Job list now contains : %s" % sched.print_jobs())
+        app.logger.info("Looking to see if current time falls within any events.")
+        current_time = datetime.time(datetime.now())
+        for event in auto_state_events:
+            start_time = datetime.time(datetime.strptime(event['event_start_time'],time_format))
+            end_time = datetime.time(datetime.strptime(event['event_end_time'],time_format))
+            if current_time > start_time and current_time < end_time:
+                app.logger.info("Event : '%s' falls within the current time, executing state." % event['event_name'])
+                self.transition(state=event['event_state'])
+                break
 
     def shutdown(self):
         app.logger.debug("shutdown - shutdown started ...")
@@ -195,6 +208,17 @@ if __name__ == '__main__':
 
     sched = Scheduler(config)
     sched.start()
+    # calculate our events from the auto_state_events list, need to find a better way of doing this, maybe a config file.
+    for event in auto_state_events:
+        app.logger.info("Processing scheduled event : %s" % event['event_name'])
+        start_hour = event['event_start_time'].split(':')[0]
+        start_minute = event['event_start_time'].split(':')[1]
+        start_second = event['event_start_time'].split(':')[2]
+        start_time = datetime.strptime(event['event_start_time'],time_format)
+        end_time = datetime.strptime(event['event_end_time'],time_format)
+        event_duration = (end_time - start_time).seconds 
+        sched.add_cron_job(led_chain.auto_transition, hour=start_hour, minute=start_minute, second=start_second , name=event['event_name'], kwargs={'state' : event['event_state']}, misfire_grace_time=event_duration)
+
     app.logger.debug("Startup job list contains : %s" % sched.get_jobs())
 
     try:
