@@ -38,7 +38,7 @@ time_format = "%H:%M:%S"
 # Event names should be unique, as they are used for last run information
 auto_state_events = [{'event_name' :  'Night Phase', 'event_start_time' : '00:00:00', 'event_end_time' : '07:00:00' , 'event_state' : [0,0,0], 'transition_duration': 1000},
                     {'event_name' :  'Sunrise Phase', 'event_start_time' : '07:30:00', 'event_end_time' : '08:00:00' , 'event_state' : [255,109,0], 'transition_duration': 5000},
-                    {'event_name' :  'Alert Phase', 'event_start_time' : '08:00:00', 'event_end_time' : '21:00:00' , 'event_state' : [0,78,103], 'transition_duration': 5000},
+                    {'event_name' :  'Alert Phase', 'event_start_time' : '08:00:00', 'event_end_time' : '21:59:00' , 'event_state' : [0,78,103], 'transition_duration': 5000},
                     {'event_name' :  'Relaxation Phase', 'event_start_time' : '22:00:00', 'event_end_time' : '23:59:00' , 'event_state' : [255,27,14], 'transition_duration': 3000},]
 
 # need to work on further transition modes.
@@ -126,7 +126,7 @@ class Chain_Communicator:
             end_time = datetime.time(datetime.strptime(event['event_end_time'],time_format))
             if current_time > start_time and current_time < end_time:
                 app.logger.info("Event : '%s' falls within the current time, executing state." % event['event_name'])
-                self.transition(state=event['event_state'])
+                self.auto_transition(state=event['event_state'])
                 break
 
     def shutdown(self):
@@ -217,7 +217,7 @@ if __name__ == '__main__':
         start_time = datetime.strptime(event['event_start_time'],time_format)
         end_time = datetime.strptime(event['event_end_time'],time_format)
         event_duration = (end_time - start_time).seconds 
-        sched.add_cron_job(led_chain.auto_transition, hour=start_hour, minute=start_minute, second=start_second , name=event['event_name'], kwargs={'state' : event['event_state']}, misfire_grace_time=event_duration)
+        sched.add_cron_job(led_chain.auto_transition, hour=start_hour, minute=start_minute, second=start_second , name=event['event_name'], kwargs={'state' : event['event_state'], 'transition_duration' : event['transition_duration']}, misfire_grace_time=event_duration)
 
     app.logger.debug("Startup job list contains : %s" % sched.get_jobs())
 
