@@ -5,6 +5,7 @@ import logging
 import time
 import json
 import Queue
+import argparse
 
 from logging.handlers import RotatingFileHandler
 from random import randint
@@ -14,12 +15,13 @@ from flask import Flask, request, session, url_for, redirect, render_template, a
 from apscheduler.scheduler import Scheduler
 
 from pigredients.ics import ws2801 as ws2801
+from pigredients.ics import lpd6803 as lpd6803
 
 SECRET_KEY = 'nkjfsnkgbkfnge347r28fherg8fskgsd2r3fjkenwkg33f3s'
 LOGGING_PATH = "moodLight.log"
 
 led_chain = None
-auto_resume_offset = 30 # the number of idle minutes before resuming auto operation after a manual override.
+auto_resume_offset = 90 # the number of idle minutes before resuming auto operation after a manual override.
 auto_resume_job = None
 
 # create our little application
@@ -37,12 +39,15 @@ time_format = "%H:%M:%S"
 # Event states should be in the form of [Red,Green,Blue]
 # Event names should be unique, as they are used for last run information
 auto_state_events = [{'event_name' :  'Night Phase', 'event_start_time' : '00:00:00', 'event_end_time' : '07:00:00' , 'event_state' : [0,0,0], 'transition_duration': 1000},
-                    {'event_name' :  'Sunrise Phase', 'event_start_time' : '07:30:00', 'event_end_time' : '08:00:00' , 'event_state' : [255,109,0], 'transition_duration': 5000},
-                    {'event_name' :  'Alert Phase', 'event_start_time' : '08:00:00', 'event_end_time' : '21:59:00' , 'event_state' : [0,78,103], 'transition_duration': 5000},
+                    {'event_name' :  'Sunrise Phase', 'event_start_time' : '07:30:00', 'event_end_time' : '08:59:00' , 'event_state' : [255,109,0], 'transition_duration': 10000},
+                    {'event_name' :  'At Work', 'event_start_time' : '09:00:00', 'event_end_time' : '18:59:00' , 'event_state' : [0,0,0], 'transition_duration': 5000},
+                    {'event_name' :  'Alert Phase', 'event_start_time' : '19:00:00', 'event_end_time' : '21:59:00' , 'event_state' : [0,78,103], 'transition_duration': 5000},
                     {'event_name' :  'Relaxation Phase', 'event_start_time' : '22:00:00', 'event_end_time' : '23:59:00' , 'event_state' : [255,27,14], 'transition_duration': 3000},]
 
 # need to work on further transition modes.
 valid_transition_modes = ['fade']
+# Currently supported led drivers 
+valid_led_drivers = ['ws2801','lpd6803']
 
 # Stolen from http://stackoverflow.com/questions/4296249/how-do-i-convert-a-hex-triplet-to-an-rgb-tuple-and-back
 HEX = '0123456789abcdef'
@@ -58,12 +63,15 @@ def triplet(rgb):
 
 class Chain_Communicator:
     
-    def __init__(self):
-        self.led_chain = ws2801.WS2801_Chain()
+    def __init__(self, driver_type, chain_length):
+        if driver_type == 'ws2801':
+            self.led_chain = ws2801.WS2801_Chain(ics_in_chain=chain_length)
+        elif driver_type == 'lpd6803':
+            self.led_chain = lpd6803.LPD6803_Chain(ics_in_chain=chain_length)
         self.auto_resume_job = None
         self.queue = Queue.Queue()
+        self.mode_jobs = []
         self.state = 'autonomous'
-        self.last_ran = {}
         self.led_state = [0,0,0]
         
         # use a running flag for our while loop
@@ -77,16 +85,20 @@ class Chain_Communicator:
         app.logger.debug("Chain_Communicator init complete.")
 
     def main_loop(self):
-        app.logger.debug("main_loop - processing queue ...")
-        while self.run :
-            # Grab the next lighting event, block until there is one.
-            lighting_event = self.queue.get(block=True)
-            # set our chain state
-            self.led_chain.set_rgb(lighting_event)
-            # write out the previously set state.
-            self.led_chain.write()
-            # store our state for later comparisons.
-            self.led_state = lighting_event
+        try:
+            app.logger.debug("main_loop - processing queue ...")
+            while self.run :
+                # Grab the next lighting event, block until there is one.
+                lighting_event = self.queue.get(block=True)
+                # set our chain state
+                self.led_chain.set_rgb(lighting_event)
+                # write out the previously set state.
+                self.led_chain.write()
+                # store our state for later comparisons.
+                self.led_state = lighting_event
+        except KeyboardInterrupt:
+            self.run = False
+            app.logger.warning("Caught keyboard interupt in main_loop.  Shutting down ...")
 
     def auto_transition(self, *args, **kwargs):
         # accepts all events from scheduler, checks if in auto mode, if not throws them away.
@@ -115,10 +127,21 @@ class Chain_Communicator:
             # last event is always fixed to the destination state to ensure we get there, regardless of any rounding errors. May need to rethink this mechanism, as I suspect small transitions will be prone to rounding errors resulting in a large final jump.
             self.queue.put(state)
 
+    def clear_mode(self):
+        app.logger.debug("Removing any mode jobs from queue")
+        for job in self.mode_jobs:
+            app.logger.debug("Removing existing mode job")
+            sched.unschedule_job(job)
+        self.mode_jobs = []
+
     def resume_auto(self):
-        # returns system state to autonomous, to be triggered via the scheduler, or via a request hook from the web ui.
+        if self.state is not 'manual':
+            self.clear_mode()
+         # returns system state to autonomous, to be triggered via the scheduler, or via a request hook from the web ui.
+
         self.state = 'autonomous'
         app.logger.debug("Resume auto called, system state is now : %s" % self.state)
+
         app.logger.info("Looking to see if current time falls within any events.")
         current_time = datetime.time(datetime.now())
         for event in auto_state_events:
@@ -152,17 +175,83 @@ def teardown_request(exception):
 def index():
     return render_template('index.html')
 
-@app.route('/addjob')
-def add_job():
+@app.route('/mode/cycle')
+def cycle_mode():
+    led_chain.state = 'cycle'
+    # Schedule our cycle events ...
+    led_chain.mode_jobs = []
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=1), name='__cycle_0', kwargs={'state' : [126,0,255], 'transition_duration' : 800}))
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=6), name='__cycle_1', kwargs={'state' : [255,0,188], 'transition_duration' : 800}))
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=11), name='__cycle_2', kwargs={'state' : [255,0,0], 'transition_duration' : 800}))
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=16), name='__cycle_3', kwargs={'state' : [255,197,0], 'transition_duration' : 800}))
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=21), name='__cycle_4', kwargs={'state' : [135,255,0], 'transition_duration' : 800}))
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=26), name='__cycle_5', kwargs={'state' : [0,255,34], 'transition_duration' : 800}))
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=31), name='__cycle_6', kwargs={'state' : [0,255,254], 'transition_duration' : 800}))
+    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=36), name='__cycle_7', kwargs={'state' : [0,52,255], 'transition_duration' : 800}))
+
+    # Set our schedulars auto resume time.
+    # !!! change this to minutes when finished debugging !!!
+    # large gracetime as we want to make sure it fires, regardless of how late it is.
+    for job in sched.get_jobs():
+        if job.name == 'autoresume':
+            app.logger.debug("Removing existing autoresume job, and adding a new one.")
+            sched.unschedule_job(led_chain.auto_resume_job)
+            led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
+            break
+    else:
+        app.logger.debug("No existing autoresume jobs, adding one.")
+        led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
+
+    return jsonify({'sucess' : True}) 
+
+
+
+@app.route('/job/list')
+def list_jobs():
+    print sched.get_jobs()
+    job_list = {}
+    for job in sched.get_jobs():
+        # Filter our our internal jobs
+        if not job.name.startswith('__'):
+            job_list[job.name] = {}
+            print "Job trigger : %s type : %s" % (job.trigger, type(job.trigger))
+            job_list[job.name]['type'] = 'stuff'
+    return jsonify(job_list) 
+
+@app.route('/job/delete')
+def delete_job():
+    return jsonify({'sucess' : False}) 
+
+
+@app.route('/job/date/add')
+def add_date_job():
     random_state = []
     for i in range(3):
         random_state.append(randint(0,255))
     sched.add_date_job(led_chain.transition, datetime.now() + timedelta(seconds=10), kwargs={'state' : random_state})
     app.logger.debug("Job list now contains : %s" % sched.print_jobs())
     return jsonify({'sucess' : True}) 
+
+@app.route('/job/cron/add')
+def add_cron_job():
+    return jsonify({'sucess' : False}) 
+
+@app.route('/job/interval/add')
+def add_interval_job():
+    return jsonify({'sucess' : False}) 
+
+
+
+@app.route('/get/current_state')
+def get_state():
+    return jsonify({'state': "#%s" % triplet(led_chain.led_state)})
+
     
 @app.route('/set/<hex_val>', methods=['GET', 'POST'])
 def send_command(hex_val):
+    if led_chain.state is not 'manual':
+        led_chain.clear_mode()
+
     return_object = {'output' : None , 'error' : None, 'success' : False}
     rgb_val = rgb(hex_val)
     app.logger.debug("Given colour_val : %s, converted it to %s" % (hex_val, rgb_val))
@@ -203,8 +292,20 @@ if __name__ == '__main__':
 
     file_handler.setLevel(logging.DEBUG)
     app.logger.addHandler(file_handler)
-    
-    led_chain = Chain_Communicator()
+
+    parser = argparse.ArgumentParser(description='Circadian and Mood Lighting.')
+
+    parser.add_argument('--type', action="store", dest="driver_type", default='ws2801', help='The model number of the LED driver, eg. ws2801 or lpd6803. default=ws2801')
+    parser.add_argument('--length', action="store", dest="led_count", type=int, default=25, help='The number of LEDs in the chain. default=25')
+
+    args = parser.parse_args()
+
+    if args.driver_type.lower() in valid_led_drivers:
+        app.logger.info("LED Driver is :%s with %d in the chain" % (args.driver_type, args.led_count))
+    else:
+        raise Exception("Invalid LED Driver %s specified, implemented types are : %s" % (args.driver_type, valid_led_drivers))
+
+    led_chain = Chain_Communicator(driver_type=args.driver_type.lower(), chain_length=args.led_count)
 
     sched = Scheduler(config)
     sched.start()
