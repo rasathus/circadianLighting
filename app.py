@@ -11,6 +11,8 @@ from random import randint
 from threading import Thread
 from datetime import datetime, timedelta
 from flask import Flask, request, session, url_for, redirect, render_template, abort, g, flash, jsonify
+from sys import exit
+
 from apscheduler.scheduler import Scheduler
 
 from pigredients.ics import ws2801 as ws2801
@@ -130,9 +132,10 @@ class Chain_Communicator:
                 break
 
     def shutdown(self):
-        app.logger.debug("shutdown - shutdown started ...")
         self.run = False
-        app.logger.debug("shutdown - returned from close.")
+        # send final state to avoid blocking on queue.
+        self.queue.put([0,0,0])
+        self.loop_instance.join()
 
 
 
@@ -225,5 +228,11 @@ if __name__ == '__main__':
         app.run(host='0.0.0.0', port=8080, use_reloader=False)
     except KeyboardInterrupt:
         app.logger.warning("Caught keyboard interupt.  Shutting down ...")
-        led_chain.shutdown()
-        sched.shutdown(wait=False)
+
+    app.logger.info("Calling shutdown on led chain")
+    led_chain.shutdown()
+    app.logger.info("Calling shutdown on scheduler")
+    sched.shutdown(wait=False)
+    app.logger.info("Shutting down logger and exiting ...")
+    logging.shutdown()
+    exit(0)
