@@ -1,0 +1,33 @@
+#! /bin/sh
+# /etc/init.d/circadian
+#
+
+circadian_path='/opt/circadian'
+startup_args='--length 25'
+
+# Carry out specific functions when asked to by the system
+case "$1" in
+  start)
+    echo "Starting Circadian Lighting ..."
+    # checking for existing instance.
+    #ps aux | "grep /usr/bin/python ${circadian_path}/app.py" > /dev/null 2>&1
+    #exit_code=$?
+
+    /usr/bin/python ${circadian_path}/app.py ${startup_args} > /dev/null 2>&1 &
+    pid=$!
+    echo $pid > /var/run/circadian.pid
+    ;;
+  stop)
+    echo "Stopping Circadian Lighting ..."
+    if [ -e /var/run/circadian.pid ]; then
+        /bin/kill -s sigterm $(cat /var/run/circadian.pid)
+        /bin/rm /var/run/circadian.pid
+    fi
+    ;;
+  *)
+    echo "Usage: /etc/init.d/circadian {start|stop}"
+    exit 1
+    ;;
+esac
+
+exit 0

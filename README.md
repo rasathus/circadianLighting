@@ -14,3 +14,5 @@ optional arguments:
 
 
 Further information on Raphael.js can be found here ... http://raphaeljs.com/
+
+To install the init script, copy the script to /etc/init.d/circadian and register it using the command 'sudo update-rc.d circadian defaults'.  Now update your app.py path, and ammend any arguments you would like to be used at startup.
