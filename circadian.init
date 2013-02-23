@@ -24,6 +24,19 @@ case "$1" in
         /bin/rm /var/run/circadian.pid
     fi
     ;;
+  restart)
+    echo "Restarting Circadian Lighting ..."
+    echo "Stopping Circadian Lighting ..."
+    if [ -e /var/run/circadian.pid ]; then
+      /bin/kill -s sigterm $(cat /var/run/circadian.pid)
+      /bin/rm /var/run/circadian.pid
+    fi
+    sleep 1
+    echo "Starting Circadian Lighting ..."
+    /usr/bin/python ${circadian_path}/app.py ${startup_args} > /dev/null 2>&1 &
+    pid=$!
+    echo $pid > /var/run/circadian.pid
+    ;;
   *)
     echo "Usage: /etc/init.d/circadian {start|stop}"
     exit 1
