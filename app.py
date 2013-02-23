@@ -20,7 +20,7 @@ from pigredients.ics import ws2801 as ws2801
 from pigredients.ics import lpd6803 as lpd6803
 
 SECRET_KEY = 'nkjfsnkgbkfnge347r28fherg8fskgsd2r3fjkenwkg33f3s'
-LOGGING_PATH = "moodLight.log"
+LOGGING_PATH = "/var/log/circadian.log"
 
 led_chain = None
 auto_resume_offset = 90 # the number of idle minutes before resuming auto operation after a manual override.
