@@ -6,7 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="">
     <meta name="author" content="">
-    
+        
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap-responsive.min.css" rel="stylesheet">
+        
+        
     <style type="text/css" media="screen">
         body {
             background: #333;
@@ -14,37 +18,41 @@
             font: 300 100.01%/1.2 "Segoe UI", "Helvetica Neue", Helvetica, "Arial Unicode", Arial, sans-serif;
             margin: 0 30px;
         }
-        #content {
-            width: 100%;
-            height: 100%;
-            /*width: 640px;
-            height: 480px; */
-            position: relative;
-        }
         h1 {
             font-weight: 300;
             font-size: 3em;
-            position: absolute;
-            right: 10px;
-            bottom: 50px;
+            margin: 10px 5px 10px 5px;
         }
         p {
-            font-size: 2em;
+            font-size: 1em;
         }
+        /*
         #benefits {
             margin-top: 350px;
+        }*/
+        #picker {
+            width: 500px;
+            min-height: 500px;
+            float: left;
         }
-        #copy a {
-            color: #666;
-            text-decoration: none;
+        #colourPicker {
+            /* this is the area the svg object is drawn over. */
+            height: 490px;
+            width: 500px;
+            min-height: 490px;
+            min-width: 500px;
         }
-        #picker2 {
-            width: 400px;
-            position: absolute;
+        #panel {
+            width: 500px;
+            height: 500px;
+            float: right;
+            /* position: absolute;
             top: 250px;
             left: 50%;
-            margin-left: -150px;
+            margin-left: -150px; */
         }
+        
+        /*
         #benefits {
             margin-bottom: 0;
         }
@@ -56,11 +64,13 @@
             left: 10px;
             font-family: monospace;
             margin-top: -20px;
+        } */
+         
+        #copy a {
+            color: #666;
+            text-decoration: none;
         }
         #copy {
-            position: absolute;
-            right: 10px;
-            bottom: 10px;
             margin: 0;
             font-size: .6em;
             color: #666;
@@ -79,24 +89,57 @@
     </script>
     <script type="text/javascript">
         window.onload = function () {
-            var out = document.getElementById("output"),
-                reg = /^#(.)\1(.)\2(.)\3$/;
-            
             // this is where colorpicker created
-            var cp = Raphael.colorpicker(40, 20, 400, "#eee");
+            var system_state = get_state();
+            cp = Raphael.colorpicker(40, 40, 400, system_state);
             
-            out.onkeyup = function () {
-                cp.color(this.value);
-            };
             // assigning onchange event handler
             cp.onchange = function (clr) {
-                console.debug("Before replace : "+clr);
-                out.value = clr.replace(reg, "#$1$2$3");
-                out.style.background = clr;
-                out.style.color = Raphael.rgb2hsb(clr).b < .5 ? "#fff" : "#000";
-                console.debug("Clr : "+Raphael.color(clr));
                 jQuery.get("/set/"+clr.replace('#',''));
+                _update_status()
             };
+            update_ui();
+            setInterval(function() { update_ui();}, 10000);
+        };
+        function cycle_mode(){
+            jQuery.get("/mode/cycle");
+            update_ui();
+        };
+        function auto_mode(){
+            jQuery.get("/mode/auto");
+            update_ui();
+        };
+        function update_ui(){
+            var current_mode = _update_status();
+            if ( current_mode != 'manual'){
+                cp.color(get_state());
+            }
+        };
+        function _update_status(){
+            //console.debug("Updating status ...");
+            var system_mode = null
+            $.ajax({
+                   url: '/get/current_mode',
+                   async: false,
+                   dataType: 'json',
+                   success: function (json) {
+                   system_mode = json.mode;
+                   $('#currentmode').text("Mode : " + system_mode);
+                   }
+            });
+            return system_mode
+        };
+        function get_state(){            
+            var system_state = null
+            $.ajax({
+                   url: '/get/current_state',
+                   async: false,
+                   dataType: 'json',
+                   success: function (json) {
+                   system_state = json.state;
+                   }
+            });
+            return system_state
         };
         </script>
   </head>
@@ -126,12 +169,7 @@
           </div>
           </br>
         </div>
-    </div> <!-- /container -->
-
-    <!-- Le javascript
-    ================================================== -->
-    <!-- Placed at the end of the document so the pages load faster -->
-    <!-- <script src="/static/js/bootstrap-transition.js"></script> -->
+    </div> 
   </body>
 </html>
 

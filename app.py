@@ -178,35 +178,44 @@ def teardown_request(exception):
 def index():
     return render_template('index.html')
 
+@app.route('/mode/auto')
+def auto_mode():
+    if led_chain.state is not 'autonomous':
+        led_chain.resume_auto()
+    
+    return jsonify({'sucess' : True})
+
+
 @app.route('/mode/cycle')
 def cycle_mode():
-    led_chain.state = 'cycle'
-    # Schedule our cycle events ...
-    led_chain.mode_jobs = []
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=1), name='__cycle_0', kwargs={'state' : [126,0,255], 'transition_duration' : 800}))
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=6), name='__cycle_1', kwargs={'state' : [255,0,188], 'transition_duration' : 800}))
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=11), name='__cycle_2', kwargs={'state' : [255,0,0], 'transition_duration' : 800}))
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=16), name='__cycle_3', kwargs={'state' : [255,197,0], 'transition_duration' : 800}))
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=21), name='__cycle_4', kwargs={'state' : [135,255,0], 'transition_duration' : 800}))
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=26), name='__cycle_5', kwargs={'state' : [0,255,34], 'transition_duration' : 800}))
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=31), name='__cycle_6', kwargs={'state' : [0,255,254], 'transition_duration' : 800}))
-    led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=36), name='__cycle_7', kwargs={'state' : [0,52,255], 'transition_duration' : 800}))
+    if led_chain.state is not 'cycle':
+        led_chain.state = 'cycle'
+        # Schedule our cycle events ...
+        led_chain.mode_jobs = []
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=1), name='__cycle_0', kwargs={'state' : [126,0,255], 'transition_duration' : 800}))
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=6), name='__cycle_1', kwargs={'state' : [255,0,188], 'transition_duration' : 800}))
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=11), name='__cycle_2', kwargs={'state' : [255,0,0], 'transition_duration' : 800}))
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=16), name='__cycle_3', kwargs={'state' : [255,197,0], 'transition_duration' : 800}))
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=21), name='__cycle_4', kwargs={'state' : [135,255,0], 'transition_duration' : 800}))
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=26), name='__cycle_5', kwargs={'state' : [0,255,34], 'transition_duration' : 800}))
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=31), name='__cycle_6', kwargs={'state' : [0,255,254], 'transition_duration' : 800}))
+        led_chain.mode_jobs.append(sched.add_interval_job(led_chain.transition, seconds=40, start_date=datetime.now() + timedelta(seconds=36), name='__cycle_7', kwargs={'state' : [0,52,255], 'transition_duration' : 800}))
 
-    # Set our schedulars auto resume time.
-    # !!! change this to minutes when finished debugging !!!
-    # large gracetime as we want to make sure it fires, regardless of how late it is.
-    for job in sched.get_jobs():
-        if job.name == 'autoresume':
-            app.logger.debug("Removing existing autoresume job, and adding a new one.")
-            sched.unschedule_job(led_chain.auto_resume_job)
+        # Set our schedulars auto resume time.
+        # !!! change this to minutes when finished debugging !!!
+        # large gracetime as we want to make sure it fires, regardless of how late it is.
+        for job in sched.get_jobs():
+            if job.name == 'autoresume':
+                app.logger.debug("Removing existing autoresume job, and adding a new one.")
+                sched.unschedule_job(led_chain.auto_resume_job)
+                led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
+                break
+        else:
+            app.logger.debug("No existing autoresume jobs, adding one.")
             led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
-            break
-    else:
-        app.logger.debug("No existing autoresume jobs, adding one.")
-        led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
 
-    return jsonify({'sucess' : True}) 
-
+    return jsonify({'sucess' : True})
+    
 
 
 @app.route('/job/list')
@@ -248,6 +257,10 @@ def add_interval_job():
 @app.route('/get/current_state')
 def get_state():
     return jsonify({'state': "#%s" % triplet(led_chain.led_state)})
+
+@app.route('/get/current_mode')
+def get_mode():
+    return jsonify({'mode': "%s" % led_chain.state})
 
     
 @app.route('/set/<hex_val>', methods=['GET', 'POST'])

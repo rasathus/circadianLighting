@@ -3,12 +3,27 @@
     Home
 {% endblock %}
 {% block body %}
-        <div id="content">
+        <!-- <div id="content">
             <h1 id="h1">Color Picker</h1>
             <input type="text" id="output" value="#eee">
-            <p id="copy">
-                Powered by <a href="http://raphaeljs.com/">Raphaël</a>
-            </p>
-        </div>
-        <div id="picker2"></div>
+        </div> -->
+
+<!-- Example row of columns -->
+<div class="row">
+    <div class="span6">
+        <div id='colourPicker'><!-- Placeholder for colour picker canvas.--></div>
+    </div>
+    <div class="span6">
+        <h2>Current Mode</h2>
+        <p id='currentmode'>...</p>
+        <h2>Modes</h2>
+        <button id='cycle_button', onclick="JavaScript:cycle_mode();">Cycle</button>
+        <button id='auto_button', onclick="JavaScript:auto_mode();">Auto</button>
+        <!-- <p id="bla">Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.</p> -->
+    </div>
+</div>
+<footer>
+    <p id="copy">Powered by <a href="http://raphaeljs.com/">Raphaël</a></p>
+</footer>
+
 {% endblock %}
