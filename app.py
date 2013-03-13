@@ -16,8 +16,10 @@ from sys import exit
 
 from apscheduler.scheduler import Scheduler
 
-from pigredients.ics import ws2801 as ws2801
-from pigredients.ics import lpd6803 as lpd6803
+# Moved to conditional imports based on selection, not sure if this is the done thing.
+# from pigredients.ics import ws2801 as ws2801
+# from pigredients.ics import lpd6803 as lpd6803
+# from pigredients.ics import lpd8806 as lpd8806
 
 SECRET_KEY = 'nkjfsnkgbkfnge347r28fherg8fskgsd2r3fjkenwkg33f3s'
 LOGGING_PATH = "/var/log/circadian.log"
@@ -49,7 +51,7 @@ auto_state_events = [{'event_name' :  'Night Phase', 'event_start_time' : '00:00
 # need to work on further transition modes.
 valid_transition_modes = ['fade']
 # Currently supported led drivers 
-valid_led_drivers = ['ws2801','lpd6803']
+valid_led_drivers = ['ws2801','lpd6803','lpd8806']
 
 # Stolen from http://stackoverflow.com/questions/4296249/how-do-i-convert-a-hex-triplet-to-an-rgb-tuple-and-back
 HEX = '0123456789abcdef'
@@ -67,9 +69,14 @@ class Chain_Communicator:
     
     def __init__(self, driver_type, chain_length):
         if driver_type == 'ws2801':
+            from pigredients.ics import ws2801 as ws2801
             self.led_chain = ws2801.WS2801_Chain(ics_in_chain=chain_length)
         elif driver_type == 'lpd6803':
+            from pigredients.ics import lpd6803 as lpd6803
             self.led_chain = lpd6803.LPD6803_Chain(ics_in_chain=chain_length)
+        elif driver_type == 'lpd8806':
+            from pigredients.ics import lpd8806 as lpd8806
+            self.led_chain = lpd8806.LPD8806_Chain(ics_in_chain=chain_length)
         self.auto_resume_job = None
         self.queue = Queue.Queue()
         self.mode_jobs = []
