@@ -6,7 +6,9 @@ import time
 import json
 import Queue
 import argparse
-
+import os 
+import ConfigParser
+ 
 from logging.handlers import RotatingFileHandler
 from random import randint
 from threading import Thread
@@ -16,27 +18,17 @@ from sys import exit
 
 from apscheduler.scheduler import Scheduler
 
-# Moved to conditional imports based on selection, not sure if this is the done thing.
-# from pigredients.ics import ws2801 as ws2801
-# from pigredients.ics import lpd6803 as lpd6803
-# from pigredients.ics import lpd8806 as lpd8806
-
 SECRET_KEY = 'nkjfsnkgbkfnge347r28fherg8fskgsd2r3fjkenwkg33f3s'
-LOGGING_PATH = "/var/log/circadian.log"
+CONFIGURATION_PATH = "/etc/circadian.conf"
 
 led_chain = None
-auto_resume_offset = 90 # the number of idle minutes before resuming auto operation after a manual override.
+auto_resume_offset = None # Now set in config file.
 auto_resume_job = None
 
 # create our little application
 app = Flask(__name__)
 app.config.from_object(__name__)
 app.debug = True # !!! Set this to False for production use !!!
-
-persistent_store_path = '/home/pi/.lighting.db'
-
-config = {'apscheduler.jobstores.file.class': 'apscheduler.jobstores.shelve_store:ShelveJobStore',
-          'apscheduler.jobstores.file.path': persistent_store_path}
 
 time_format = "%H:%M:%S"
 # Event times should be in the form of %H:%M:%S
@@ -305,8 +297,11 @@ app.jinja_env.filters['datetimeformat'] = format_datetime
 
 
 if __name__ == '__main__':
+    app_config = ConfigParser.SafeConfigParser()
+    app_config.readfp(open(CONFIGURATION_PATH))
+    
     # create console handler and set level to debug, with auto log rotate max size 10mb keeping 10 logs.
-    file_handler = RotatingFileHandler( LOGGING_PATH , maxBytes=10240000, backupCount=10)
+    file_handler = RotatingFileHandler( app_config.get("general", "logging_path") , maxBytes=10240000, backupCount=10)
 
     # create formatter
     log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -316,21 +311,32 @@ if __name__ == '__main__':
     file_handler.setLevel(logging.DEBUG)
     app.logger.addHandler(file_handler)
 
+    try:
+        auto_resume_offset = app_config.get("behaviour", "auto_resume_delay")
+    except ConfigParser.NoOptionError:
+        app.logger.warning("No 'auto_resume_delay' option specified in 'behaviour' section of the config file, defaulting to 90")
+        auto_resume_offset = 90  
+
     parser = argparse.ArgumentParser(description='Circadian and Mood Lighting.')
 
-    parser.add_argument('--type', action="store", dest="driver_type", default='ws2801', help='The model number of the LED driver, eg. ws2801 or lpd6803. default=ws2801')
-    parser.add_argument('--length', action="store", dest="led_count", type=int, default=25, help='The number of LEDs in the chain. default=25')
+    parser.add_argument('--type', action="store", dest="driver_type", required=False, help='The model number of the LED driver, eg. ws2801 or lpd6803. defaults to configuration file.')
+    parser.add_argument('--length', action="store", dest="led_count", type=int, required=False, help='The number of LEDs in the chain. defaults to configuration file.')
 
     args = parser.parse_args()
-
-    if args.driver_type.lower() in valid_led_drivers:
-        app.logger.info("LED Driver is :%s with %d in the chain" % (args.driver_type, args.led_count))
+    if args.driver_type is not None and args.led_count is not None:
+        if args.driver_type.lower() in valid_led_drivers:
+            app.logger.info("LED Driver is :%s with %d in the chain" % (args.driver_type, args.led_count))
+            led_chain = Chain_Communicator(driver_type=args.driver_type.lower(), chain_length=args.led_count)
+        else:
+            raise Exception("Invalid LED Driver %s specified, implemented types are : %s" % (args.driver_type, valid_led_drivers))
     else:
-        raise Exception("Invalid LED Driver %s specified, implemented types are : %s" % (args.driver_type, valid_led_drivers))
+        try:
+            led_chain = Chain_Communicator(driver_type=app_config.get("chain", "type"), chain_length=int(app_config.get("chain", "length")))
+        except ConfigParser.NoOptionError:
+            app.logger.warning("Unable to find both length and type properties in chain section of configuration file.")
 
-    led_chain = Chain_Communicator(driver_type=args.driver_type.lower(), chain_length=args.led_count)
 
-    sched = Scheduler(config)
+    sched = Scheduler()
     sched.start()
     # calculate our events from the auto_state_events list, need to find a better way of doing this, maybe a config file.
     for event in auto_state_events:
@@ -346,7 +352,7 @@ if __name__ == '__main__':
     app.logger.debug("Startup job list contains : %s" % sched.get_jobs())
 
     try:
-        app.run(host='0.0.0.0', port=8080, use_reloader=False)
+        app.run(host='0.0.0.0', port=int(app_config.get("general", "web_port")), use_reloader=False)
     except KeyboardInterrupt:
         app.logger.warning("Caught keyboard interupt.  Shutting down ...")
 
