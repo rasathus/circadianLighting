@@ -312,7 +312,7 @@ if __name__ == '__main__':
     app.logger.addHandler(file_handler)
 
     try:
-        auto_resume_offset = app_config.get("behaviour", "auto_resume_delay")
+        auto_resume_offset = int(app_config.get("behaviour", "auto_resume_delay"))
     except ConfigParser.NoOptionError:
         app.logger.warning("No 'auto_resume_delay' option specified in 'behaviour' section of the config file, defaulting to 90")
         auto_resume_offset = 90  
