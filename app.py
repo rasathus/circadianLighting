@@ -165,6 +165,34 @@ def format_datetime(timestamp):
     """Format a timestamp for display."""
     return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d @ %H:%M')
 
+def manual_set(hex_val):
+    if led_chain.state is not 'manual':
+        led_chain.clear_mode()
+
+    return_object = {'output' : None , 'error' : None, 'success' : False}
+    rgb_val = rgb(hex_val)
+    app.logger.debug("Given colour_val : %s, converted it to %s" % (hex_val, rgb_val))
+    led_chain.transition([rgb_val['R'],rgb_val['G'],rgb_val['B']])
+    app.logger.info("Set chain to manual colour state : %s" % [rgb_val['R'],rgb_val['G'],rgb_val['B']])
+
+    # Set our schedulars auto resume time.
+    # !!! change this to minutes when finished debugging !!!
+    # large gracetime as we want to make sure it fires, regardless of how late it is.
+    for job in sched.get_jobs():
+        if job.name == 'autoresume':
+            app.logger.debug("Removing existing autoresume job, and adding a new one.")
+            sched.unschedule_job(led_chain.auto_resume_job)
+            led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
+            break
+    else:
+        app.logger.debug("No existing autoresume jobs, adding one.")
+        led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
+
+    app.logger.debug("Job list now contains : %s" % sched.print_jobs())
+    led_chain.state = 'manual'
+    return_object['success'] = True
+    return return_object
+
 @app.before_request
 def before_request():
     pass
@@ -184,6 +212,10 @@ def auto_mode():
     
     return jsonify({'sucess' : True})
 
+@app.route('/mode/off')
+def auto_mode():
+    manual_set('000000')
+    return jsonify({'sucess' : True})
 
 @app.route('/mode/cycle')
 def cycle_mode():
@@ -264,33 +296,7 @@ def get_mode():
     
 @app.route('/set/<hex_val>', methods=['GET', 'POST'])
 def send_command(hex_val):
-    if led_chain.state is not 'manual':
-        led_chain.clear_mode()
-
-    return_object = {'output' : None , 'error' : None, 'success' : False}
-    rgb_val = rgb(hex_val)
-    app.logger.debug("Given colour_val : %s, converted it to %s" % (hex_val, rgb_val))
-    led_chain.transition([rgb_val['R'],rgb_val['G'],rgb_val['B']])
-    app.logger.info("Set chain to manual colour state : %s" % [rgb_val['R'],rgb_val['G'],rgb_val['B']])
-
-    # Set our schedulars auto resume time.
-    # !!! change this to minutes when finished debugging !!!
-    # large gracetime as we want to make sure it fires, regardless of how late it is.
-    for job in sched.get_jobs():
-        if job.name == 'autoresume':
-            app.logger.debug("Removing existing autoresume job, and adding a new one.")
-            sched.unschedule_job(led_chain.auto_resume_job)
-            led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
-            break
-    else:
-        app.logger.debug("No existing autoresume jobs, adding one.")
-        led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
-        
-    app.logger.debug("Job list now contains : %s" % sched.print_jobs())
-    led_chain.state = 'manual'
-
-    return_object['success'] = True
-    return jsonify(return_object)   
+    return jsonify(manual_set(hex_val))  
 
 # add some filters to jinja
 app.jinja_env.filters['datetimeformat'] = format_datetime

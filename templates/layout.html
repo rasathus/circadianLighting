@@ -85,6 +85,10 @@
             jQuery.get("/mode/auto");
             update_ui();
         };
+        function off_mode(){
+            jQuery.get("/mode/off");
+            update_ui();
+        };
         function update_ui(){
             var current_mode = _update_status();
             if ( current_mode != 'manual'){
