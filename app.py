@@ -18,6 +18,13 @@ from sys import exit
 
 from apscheduler.scheduler import Scheduler
 
+# Add controlmypi as an optional module.  Can installed via pip
+try:
+    from controlmypi import ControlMyPi
+except ImportError:
+    pass
+
+
 SECRET_KEY = 'nkjfsnkgbkfnge347r28fherg8fskgsd2r3fjkenwkg33f3s'
 CONFIGURATION_PATH = "/etc/circadian.conf"
 
@@ -59,7 +66,7 @@ def triplet(rgb):
 
 class Chain_Communicator:
     
-    def __init__(self, driver_type, chain_length):
+    def __init__(self, driver_type, chain_length, controlmypi=None):
         if driver_type == 'ws2801':
             from pigredients.ics import ws2801 as ws2801
             self.led_chain = ws2801.WS2801_Chain(ics_in_chain=chain_length)
@@ -74,6 +81,7 @@ class Chain_Communicator:
         self.mode_jobs = []
         self.state = 'autonomous'
         self.led_state = [0,0,0]
+        self.controlmypi = controlmypi
         
         # use a running flag for our while loop
         self.run = True
@@ -127,6 +135,9 @@ class Chain_Communicator:
 
             # last event is always fixed to the destination state to ensure we get there, regardless of any rounding errors. May need to rethink this mechanism, as I suspect small transitions will be prone to rounding errors resulting in a large final jump.
             self.queue.put(state)
+            if self.controlmypi is not None:
+                app.logger.debug("Updating control my pi with state : #%s" % triplet(state))
+                self.controlmypi.update_status({'indicator': "#%s" % triplet(state)})
 
     def clear_mode(self):
         app.logger.debug("Removing any mode jobs from queue")
@@ -262,8 +273,7 @@ def get_mode():
     return jsonify({'mode': "%s" % led_chain.state})
 
     
-@app.route('/set/<hex_val>', methods=['GET', 'POST'])
-def send_command(hex_val):
+def manual_set(hex_val):
     if led_chain.state is not 'manual':
         led_chain.clear_mode()
 
@@ -285,18 +295,28 @@ def send_command(hex_val):
     else:
         app.logger.debug("No existing autoresume jobs, adding one.")
         led_chain.auto_resume_job = sched.add_date_job(led_chain.resume_auto, datetime.now() + timedelta(minutes=auto_resume_offset), name='autoresume', misfire_grace_time=240)
-        
+
     app.logger.debug("Job list now contains : %s" % sched.print_jobs())
     led_chain.state = 'manual'
-
     return_object['success'] = True
-    return jsonify(return_object)   
+    return return_object
+    
+@app.route('/set/<hex_val>', methods=['GET', 'POST'])
+def send_command(hex_val):
+    return jsonify(manual_set(hex_val))
+
+def on_controlmypi_msg(connection, key, value):
+    app.logger.debug("Recieved message from control my pi, key : %s , value : %s" % (key, value))
+    if key == 'wheel':
+        manual_set(value[1:7])
+        connection.update_status({'indicator':value})
 
 # add some filters to jinja
 app.jinja_env.filters['datetimeformat'] = format_datetime
 
 
 if __name__ == '__main__':
+    logging.basicConfig()
     app_config = ConfigParser.SafeConfigParser()
     app_config.readfp(open(CONFIGURATION_PATH))
     
@@ -312,7 +332,7 @@ if __name__ == '__main__':
     app.logger.addHandler(file_handler)
 
     try:
-        auto_resume_offset = app_config.get("behaviour", "auto_resume_delay")
+        auto_resume_offset = int(app_config.get("behaviour", "auto_resume_delay"))
     except ConfigParser.NoOptionError:
         app.logger.warning("No 'auto_resume_delay' option specified in 'behaviour' section of the config file, defaulting to 90")
         auto_resume_offset = 90  
@@ -321,20 +341,29 @@ if __name__ == '__main__':
 
     parser.add_argument('--type', action="store", dest="driver_type", required=False, help='The model number of the LED driver, eg. ws2801 or lpd6803. defaults to configuration file.')
     parser.add_argument('--length', action="store", dest="led_count", type=int, required=False, help='The number of LEDs in the chain. defaults to configuration file.')
-
+    parser.add_argument("--controlmypi", help="Make available from controlmypi.com", dest="control_my_pi", action="store_true", default=False)
     args = parser.parse_args()
+
+
+    if args.control_my_pi:
+        app.logger.debug("Running up Control My Pi connection.")
+        p = [ [ ['L','Pick a colour:'],['W','wheel'],['L','Current lighting State:'],['I','indicator','#000000'] ] ]
+        controlmypi_connection = ControlMyPi(app_config.get("controlmypi", "jabber_id"), app_config.get("controlmypi", "password"), app_config.get("controlmypi", "panel_id"), app_config.get("controlmypi", "panel_name"), p, on_controlmypi_msg)
+    else:
+        controlmypi_connection = None
+
+
     if args.driver_type is not None and args.led_count is not None:
         if args.driver_type.lower() in valid_led_drivers:
             app.logger.info("LED Driver is :%s with %d in the chain" % (args.driver_type, args.led_count))
-            led_chain = Chain_Communicator(driver_type=args.driver_type.lower(), chain_length=args.led_count)
+            led_chain = Chain_Communicator(driver_type=args.driver_type.lower(), chain_length=args.led_count, controlmypi=controlmypi_connection)
         else:
             raise Exception("Invalid LED Driver %s specified, implemented types are : %s" % (args.driver_type, valid_led_drivers))
     else:
         try:
-            led_chain = Chain_Communicator(driver_type=app_config.get("chain", "type"), chain_length=int(app_config.get("chain", "length")))
+            led_chain = Chain_Communicator(driver_type=app_config.get("chain", "type"), chain_length=int(app_config.get("chain", "length")), controlmypi=controlmypi_connection)
         except ConfigParser.NoOptionError:
             app.logger.warning("Unable to find both length and type properties in chain section of configuration file.")
-
 
     sched = Scheduler()
     sched.start()
@@ -351,10 +380,20 @@ if __name__ == '__main__':
 
     app.logger.debug("Startup job list contains : %s" % sched.get_jobs())
 
-    try:
-        app.run(host='0.0.0.0', port=int(app_config.get("general", "web_port")), use_reloader=False)
-    except KeyboardInterrupt:
-        app.logger.warning("Caught keyboard interupt.  Shutting down ...")
+    if args.control_my_pi:
+        if controlmypi_connection.start_control():
+            try:
+                app.run(host='0.0.0.0', port=int(app_config.get("general", "web_port")), use_reloader=False)
+            except KeyboardInterrupt:
+                app.logger.warning("Caught keyboard interupt.  Shutting down ...")
+        app.logger.info("Calling shutdown on ControlMyPi.com")
+        controlmypi_connection.stop_control()
+    else:
+        try:
+            app.run(host='0.0.0.0', port=int(app_config.get("general", "web_port")), use_reloader=False)
+        except KeyboardInterrupt:
+            app.logger.warning("Caught keyboard interupt.  Shutting down ...")
+
 
     app.logger.info("Calling shutdown on led chain")
     led_chain.shutdown()
