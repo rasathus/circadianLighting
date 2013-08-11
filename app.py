@@ -213,7 +213,7 @@ def auto_mode():
     return jsonify({'sucess' : True})
 
 @app.route('/mode/off')
-def auto_mode():
+def off_mode():
     manual_set('000000')
     return jsonify({'sucess' : True})
 
